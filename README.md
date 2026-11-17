@@ -1,5 +1,5 @@
 # 
-
+Annotated gif hand movements
 <img src="/home/mohana/Documents/Roboto_RL/Human-Demonstration/data/visualizations/demo_01_annotated.gif" width="300">
 
 
@@ -39,7 +39,7 @@ ffmpeg -ss 10 \
 Extract hand movements from real videos and measure 
 the quality of the recorded demonstrations.
 
-  <img src="figures/Hand%20Tracking%20Pipeline%20Infographic.png" width="78%">
+  <img src="figures/Hand%20Tracking%20Pipeline%20Infographic.png" width="58%">
 
 For every video, the scripts would need to reads the frames,
 detects one hand, extracts 21 landmarks, each 
