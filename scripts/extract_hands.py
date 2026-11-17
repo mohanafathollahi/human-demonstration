@@ -3,11 +3,15 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 import pandas as pd
+import numpy as np
 
 
-VIDEO_DIR = Path("data/downloads")
-OUTPUT_DIR = Path("data/processed")
-MODEL_PATH = "models/hand_landmarker.task"
+# Project directories
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+print(f"proj_dir:{PROJECT_DIR}")
+VIDEO_DIR = PROJECT_DIR / "data" / "videos"
+OUTPUT_DIR = PROJECT_DIR / "data" / "processed"
+MODEL_PATH = PROJECT_DIR / "models" / "hand_landmarker.task"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -32,73 +36,96 @@ def process_video(video_path):
         cap.release()
         raise ValueError("Invalid video FPS")
 
+    # Allow detection of two hands
     options = HandLandmarkerOptions(
         base_options=BaseOptions(
-            model_asset_path=MODEL_PATH
+            model_asset_path=str(MODEL_PATH)
         ),
         running_mode=RunningMode.VIDEO,
-        num_hands=1,
+        num_hands=2,
     )
 
     rows = []
     frame_id = 0
 
-    with HandLandmarker.create_from_options(options) as landmarker:
+    try:
+        with HandLandmarker.create_from_options(options) as landmarker:
 
-        while True:
+            while True:
 
-            success, frame = cap.read()
+                success, frame = cap.read()
 
-            if not success:
-                break
+                if not success:
+                    break
 
-            # Convert BGR to RGB
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                rgb = cv2.cvtColor(
+                    frame,
+                    cv2.COLOR_BGR2RGB
+                )
 
-            image = mp.Image(
-                image_format=mp.ImageFormat.SRGB,
-                data=rgb
-            )
+                image = mp.Image(
+                    image_format=mp.ImageFormat.SRGB,
+                    data=rgb
+                )
 
-            timestamp_ms = int(
-                round(frame_id * 1000 / fps)
-            )
+                timestamp_ms = int(
+                    round(frame_id * 1000 / fps)
+                )
 
-            result = landmarker.detect_for_video(
-                image,
-                timestamp_ms
-            )
+                result = landmarker.detect_for_video(
+                    image,
+                    timestamp_ms
+                )
 
-            row = {
-                "video": video_path.name,
-                "frame": frame_id,
-                "time": frame_id / fps,
-                "hand_detected": 0,
-            }
+                # Initialize one row per frame
+                row = {
+                    "video": video_path.name,
+                    "frame": frame_id,
+                    "time": frame_id / fps,
+                    "left_detected": 0,
+                    "right_detected": 0,
+                    "left_confidence": np.nan,
+                    "right_confidence": np.nan,
+                }
 
-            # Initialize landmarks as missing
-            for i in range(21):
-                row[f"x{i}"] = float("nan")
-                row[f"y{i}"] = float("nan")
-                row[f"z{i}"] = float("nan")
+                # Initialize all 42 landmarks as missing
+                for hand in ["left", "right"]:
+                    for i in range(21):
 
-            if result.hand_landmarks:
+                        row[f"{hand}_x{i}"] = np.nan
+                        row[f"{hand}_y{i}"] = np.nan
+                        row[f"{hand}_z{i}"] = np.nan
 
-                row["hand_detected"] = 1
+                # Process each detected hand
+                for hand_idx, landmarks in enumerate(
+                    result.hand_landmarks
+                ):
 
-                landmarks = result.hand_landmarks[0]
+                    if not result.handedness[hand_idx]:
+                        continue
 
-                for i, landmark in enumerate(landmarks):
+                    category = result.handedness[hand_idx][0]
 
-                    row[f"x{i}"] = landmark.x
-                    row[f"y{i}"] = landmark.y
-                    row[f"z{i}"] = landmark.z
+                    hand_label = category.category_name.lower()
+                    confidence = float(category.score)
 
-            rows.append(row)
+                    if hand_label not in ["left", "right"]:
+                        continue
 
-            frame_id += 1
+                    row[f"{hand_label}_detected"] = 1
+                    row[f"{hand_label}_confidence"] = confidence
 
-    cap.release()
+                    for i, landmark in enumerate(landmarks):
+
+                        row[f"{hand_label}_x{i}"] = landmark.x
+                        row[f"{hand_label}_y{i}"] = landmark.y
+                        row[f"{hand_label}_z{i}"] = landmark.z
+
+                rows.append(row)
+                frame_id += 1
+
+    finally:
+        cap.release()
 
     output_path = OUTPUT_DIR / f"{video_path.stem}.csv"
 
@@ -111,7 +138,14 @@ def process_video(video_path):
 
 
 def main():
+
+    if not MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"MediaPipe model not found: {MODEL_PATH}"
+        )
+
     videos = sorted(VIDEO_DIR.glob("*.mp4"))
+
     if not videos:
         print("No MP4 videos found.")
         return
