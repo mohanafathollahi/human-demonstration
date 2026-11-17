@@ -1,5 +1,6 @@
 # 
 Annotated gif hand movements
+
 <img src="/home/mohana/Documents/Roboto_RL/Human-Demonstration/data/visualizations/demo_01_annotated.gif" width="300">
 
 
